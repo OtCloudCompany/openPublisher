@@ -1,2 +1,2 @@
 # openPublisher
-Django backend for openPublisher
+Backend code for the most popular django openPublisher
