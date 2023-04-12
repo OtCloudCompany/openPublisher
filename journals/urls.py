@@ -14,20 +14,16 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.contrib import admin
-from django.urls import path, include
-from rest_framework import routers
-from rest_framework.authtoken.views import obtain_auth_token
+from django.urls import path
 
+from journals import views
 
-router = routers.DefaultRouter()
+app_name = "journals"
 
-urlpatterns = router.urls
-
-urlpatterns += [
-    path('admin/', admin.site.urls),
-    path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
-    path('profiles/', include('accounts.urls', namespace="profiles")),
-    path('journals/', include('journals.urls', namespace="journals")),
-    path('auth-token/', obtain_auth_token),  # Gives us access to auth_token
+urlpatterns = [
+    path('create', views.CreateJournal.as_view()),
+    path('<pk>/update', views.UpdateJournal.as_view()),
+    path('<pk>/delete', views.DeleteJournal.as_view()),
+    path('<pk>/details', views.JournalDetails.as_view()),
+    path('list', views.ListJournals.as_view()),
 ]

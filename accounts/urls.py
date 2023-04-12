@@ -23,8 +23,8 @@ app_name = "profiles"
 urlpatterns = [
     path('create', profile_views.CreateProfile.as_view()),
     path('list', profile_views.ListProfiles.as_view()),
-    path('delete/<pk>', profile_views.DeleteProfile.as_view()),
-    path('update/<pk>', profile_views.UpdateProfile.as_view()),
+    path('<pk>/delete', profile_views.DeleteProfile.as_view()),
+    path('<pk>/update', profile_views.UpdateProfile.as_view()),
     path('login', profile_views.Login.as_view()),
 ]
 

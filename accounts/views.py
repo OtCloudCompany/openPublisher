@@ -4,6 +4,7 @@ from django.contrib.auth import authenticate
 from django.http import JsonResponse
 from rest_framework import status
 from rest_framework import permissions
+from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
@@ -19,6 +20,8 @@ class ListProfiles(APIView):
     """
 
     model = Profile
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         profiles = self.model.objects.all()
@@ -41,7 +44,7 @@ class CreateProfile(APIView):
             serializer = self.serializer_class(data=data)
             if serializer.is_valid(raise_exception=True):
                 serializer.save()
-                return Response(data=data)
+                return Response(data=data, status=status.HTTP_201_CREATED)
             else:
                 return JsonResponse(
                     data=serializer.errors,
@@ -55,11 +58,11 @@ class CreateProfile(APIView):
 
 
 class UpdateProfile(APIView):
-    """
-    API endpoint for updating a profile.
-    """
-
+    """ API endpoint for updating a profile."""
     model = Profile
+
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
 
     def put(self, request, pk):
 
@@ -89,6 +92,9 @@ class DeleteProfile(APIView):
 
     model = Profile
 
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
     def delete(self, request, pk):
 
         try:
@@ -99,6 +105,26 @@ class DeleteProfile(APIView):
         profile.delete()
 
         return JsonResponse({"result": "success", "message": "Profile deleted"})
+
+
+class ProfileDetails(APIView):
+    """Single profile details"""
+
+    model = Profile
+    serializer_class = ProfileSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+
+        try:
+            profile = self.model.objects.get(pk=pk)
+        except self.model.DoesNotExist:
+            return Response({'error': 'Profile does not exist'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.serializer_class(instance=profile)
+
+        return JsonResponse(data=serializer.data, status=status.HTTP_200_OK)
 
 
 class Login(APIView):
