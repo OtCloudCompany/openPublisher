@@ -41,6 +41,8 @@ INSTALLED_APPS = [
     'django_extensions',
     'rest_framework',
     'rest_framework.authtoken',
+    'rest_registration',
+    'corsheaders',
 
     'accounts',
     'journals',
@@ -51,6 +53,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -138,7 +141,7 @@ MAX_UPLOAD_SIZE = 5242880
 FILE_UPLOAD_PERMISSIONS = 0o640
 
 BASE_URL = 'localhost'
-LOGIN_URL = '/staff/login'
+LOGIN_URL = '/profiles/login'
 
 en_formats.DATE_FORMAT = 'd-m-Y'
 en_formats.DATETIME_FORMAT = 'd-m-Y H:i:s'
@@ -160,10 +163,29 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.BasicAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
+        # 'rest_framework.authentication.BasicAuthentication',
+        # 'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10
+}
+
+CORS_ORIGIN_ALLOW_ALL = False
+
+CORS_ORIGIN_WHITELIST = [
+    'http://localhost:4200',
+    # Add other domains that need to be allowed
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+REST_REGISTRATION = {
+    'REGISTER_VERIFICATION_ENABLED': False,
+    'REGISTER_EMAIL_VERIFICATION_ENABLED': False,
+    'RESET_PASSWORD_VERIFICATION_ENABLED': False,
+    'REGISTER_VERIFICATION_URL': BASE_URL + '/verify-user/',
+    'RESET_PASSWORD_VERIFICATION_URL': BASE_URL + '/reset-password/',
+    'REGISTER_EMAIL_VERIFICATION_URL': BASE_URL + '/verify-email/',
+    'VERIFICATION_FROM_EMAIL': 'no-reply@hyperlink.co.ke',
 }

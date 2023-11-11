@@ -7,7 +7,7 @@ class Journal(models.Model):
     title = models.CharField(max_length=250, blank=False, null=False)
     abbreviation = models.CharField(max_length=25, blank=False, null=False, unique=True)
     description = models.TextField(max_length=25, help_text="A short description shown on list pages")
-    active = models.BooleanField(default=False)
+    active = models.BooleanField(default=True)
     publisher = models.CharField(max_length=250, blank=False, null=False)
     online_issn = models.CharField(max_length=250, blank=True, unique=True)
     print_issn = models.CharField(max_length=250, blank=True, unique=True)

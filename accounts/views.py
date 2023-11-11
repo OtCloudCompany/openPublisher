@@ -9,9 +9,8 @@ from rest_framework.authtoken.models import Token
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
 from accounts.models import Profile
-from accounts.serializers import ProfileSerializer
+from accounts.serializers import CreateProfileSerializer, LoginSerializer, ProfileSerializer
 
 
 class ListProfiles(APIView):
@@ -25,7 +24,7 @@ class ListProfiles(APIView):
 
     def get(self, request):
         profiles = self.model.objects.all()
-        serializer = ProfileSerializer(profiles, many=True)
+        serializer = ProfileSerializer
 
         return Response(data=serializer.data)
 
@@ -36,7 +35,7 @@ class CreateProfile(APIView):
     """
 
     model = Profile
-    serializer_class = ProfileSerializer
+    serializer_class = CreateProfileSerializer
 
     def post(self, request):
         try:
@@ -111,7 +110,7 @@ class ProfileDetails(APIView):
     """Single profile details"""
 
     model = Profile
-    serializer_class = ProfileSerializer
+    serializer_class = CreateProfileSerializer
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
@@ -131,7 +130,7 @@ class Login(APIView):
     """Login"""
 
     model = Profile
-    serializer_class = ProfileSerializer
+    serializer_class = LoginSerializer
 
     def post(self, request, *args, **kwargs):
 
@@ -153,21 +152,24 @@ class Login(APIView):
 
             try:
                 token = Token.objects.get(user=profile)
+                user_permissions = profile.get_user_permissions()
             except Token.DoesNotExist:
                 return Response(
                     {"result": "error", 'message': 'No token found for user'},
                     status=status.HTTP_401_UNAUTHORIZED
                 )
-
-            return Response({
-                'token': token.key,
-                'id': profile.pk,
-                'first_name': profile.first_name,
-                'last_name': profile.last_name,
-                'email': profile.email
-            })
+            return Response(
+                data={
+                    'access_token': token.key,
+                    'id': profile.pk,
+                    'first_name': profile.first_name,
+                    'last_name': profile.last_name,
+                    'email': profile.email,
+                    'permissions': user_permissions
+                },
+                status=status.HTTP_200_OK)
         else:
             return Response(
-                {"result": "error", 'message': 'Login failed'},
+                data={"result": "error", 'message': 'Login failed'},
                 status=status.HTTP_401_UNAUTHORIZED
             )

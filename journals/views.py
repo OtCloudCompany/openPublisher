@@ -26,9 +26,11 @@ class CreateJournal(APIView):
             data = JSONParser().parse(request)
             data.update({"created_by": self.request.user.pk})
             serializer = self.serializer_class(data=data)
-            if serializer.is_valid(raise_exception=True):
-                serializer.save()
-                return Response(data=data, status=status.HTTP_201_CREATED)
+            if serializer.is_valid():
+                journal = serializer.save()
+                serialized_journal = self.serializer_class(instance=journal)
+
+                return Response(data=serialized_journal.data, status=status.HTTP_201_CREATED)
             else:
                 return JsonResponse(
                     data=serializer.errors,
@@ -115,12 +117,13 @@ class JournalDetails(APIView):
 
         return JsonResponse(data=serializer.data, status=status.HTTP_200_OK)
 
-
 class ListJournals(APIView):
     """
     API endpoint for listing all journals.
     """
 
+    authentication_classes = [TokenAuthentication]
+    permission_classes = []
     model = Journal
     serializer_class = JournalSerializer
 
