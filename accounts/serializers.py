@@ -3,10 +3,11 @@ from rest_framework import serializers
 
 
 class ProfileSerializer:
+    web3_key = serializers.SerializerMethodField()
     class Meta:
         model = Profile
         fields = ['id', 'first_name', 'last_name', 'other_name', 'email', 'primary_phone', 'national_id',
-                  'secondary_phone', 'additional_email', 'address', 'additional_address']
+                  'secondary_phone', 'additional_email', 'address', 'additional_address', 'web3_address', 'web3_key']
 
 
 class CreateProfileSerializer(serializers.ModelSerializer):
@@ -31,8 +32,16 @@ class CreateProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ['first_name', 'last_name', 'other_name', 'email', 'primary_phone', 'national_id',
+        fields = ['first_name', 'last_name', 'other_name', 'email', 'primary_phone', 'national_id', 'web3_address',
                   'secondary_phone', 'additional_email', 'address', 'additional_address', 'password', 'password_repeat']
+
+
+class ProfileDetailsSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Profile
+        fields = ['id', 'first_name', 'last_name', 'other_name', 'email', 'primary_phone', 'national_id', 'web3_address',
+                  'secondary_phone', 'additional_email', 'address', 'additional_address']
 
 
 class LoginSerializer(serializers.ModelSerializer):

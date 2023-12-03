@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 from pathlib import Path
 import os
 from django.conf.locale.en import formats as en_formats
+from web3 import Web3
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,7 +42,6 @@ INSTALLED_APPS = [
     'django_extensions',
     'rest_framework',
     'rest_framework.authtoken',
-    'rest_registration',
     'corsheaders',
 
     'accounts',
@@ -111,7 +111,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
@@ -180,12 +179,15 @@ CORS_ORIGIN_WHITELIST = [
 
 CORS_ALLOW_CREDENTIALS = True
 
-REST_REGISTRATION = {
-    'REGISTER_VERIFICATION_ENABLED': False,
-    'REGISTER_EMAIL_VERIFICATION_ENABLED': False,
-    'RESET_PASSWORD_VERIFICATION_ENABLED': False,
-    'REGISTER_VERIFICATION_URL': BASE_URL + '/verify-user/',
-    'RESET_PASSWORD_VERIFICATION_URL': BASE_URL + '/reset-password/',
-    'REGISTER_EMAIL_VERIFICATION_URL': BASE_URL + '/verify-email/',
-    'VERIFICATION_FROM_EMAIL': 'no-reply@hyperlink.co.ke',
-}
+# WEB3 TOOLS
+W3 = Web3(Web3.HTTPProvider('https://sepolia.infura.io/v3/33402a9c3c794b65ae627ce14205f81a'))
+W3_OWNERS_ADDRESS = Web3.to_checksum_address("0x674938B41B6ed666989f4C476A721224288F0b1E".lower())
+W3_CONTRACT_ADDRESS = Web3.to_checksum_address("0x0f20c349b63e3f42c64dcd70b40530869c6c99c5")
+W3_PRIV_KEY = '0xd3af8e91942b26667d2d0e04bbc06b9cbe67b162daf8c3db3e31aac1d2f41eb5'  # open('priv_key.txt').readline()
+W3_TEST_ACCOUNTS = [
+    W3_OWNERS_ADDRESS,
+    Web3.to_checksum_address("0x0297F6C254CeD9B8A3A3d829dfA80ccB73d5e6ED".lower()),
+    Web3.to_checksum_address("0xB4a271B7e99B07Cd8989f8e1C7ccfc42Fd41eC6A".lower())
+]
+INFURA_API_KEY = '33402a9c3c794b65ae627ce14205f81a'
+INFURA_SECRET_KEY = '93c55cc9d9634b2090ce32c68f6cf699'

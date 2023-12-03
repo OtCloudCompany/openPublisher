@@ -1,5 +1,5 @@
 from json import JSONDecodeError
-
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.http import JsonResponse
 from rest_framework import status
@@ -10,7 +10,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from accounts.models import Profile
-from accounts.serializers import CreateProfileSerializer, LoginSerializer, ProfileSerializer
+from accounts.serializers import CreateProfileSerializer, LoginSerializer, ProfileSerializer, ProfileDetailsSerializer
 
 
 class ListProfiles(APIView):
@@ -36,13 +36,21 @@ class CreateProfile(APIView):
 
     model = Profile
     serializer_class = CreateProfileSerializer
+    web3 = settings.W3
 
     def post(self, request):
         try:
             data = JSONParser().parse(request)
             serializer = self.serializer_class(data=data)
-            if serializer.is_valid(raise_exception=True):
-                serializer.save()
+            if serializer.is_valid(raise_exception=settings.DEBUG):
+                instance = serializer.save()
+                if self.web3.is_connected():
+                    web3_account = self.web3.eth.account.create()
+                    instance.web3_address = web3_account.address
+                    instance.save()
+                    web3_key = self.web3.to_hex(web3_account.key)
+                    data['web3_address'] = instance.web3_address
+                    data['web3_key'] = web3_key
                 return Response(data=data, status=status.HTTP_201_CREATED)
             else:
                 return JsonResponse(
@@ -86,6 +94,35 @@ class UpdateProfile(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class CreateAddress(APIView):
+    """ API endpoint for creating web3 address."""
+    model = Profile
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    web3 = settings.W3
+    serializer_class = ProfileDetailsSerializer
+
+    def put(self, request, pk):
+
+        try:
+            profile = self.model.objects.get(pk=pk)
+        except self.model.DoesNotExist:
+            return Response({"result": "error", 'message': 'Profile does not exist'}, status=status.HTTP_404_NOT_FOUND)
+
+        if self.web3.is_connected():
+            web3_account = self.web3.eth.account.create()
+            profile.web3_address = web3_account.address
+            profile.save()
+            data = JSONParser().parse(profile)
+            data['web3_key'] = self.web3.to_hex(web3_account.key)
+
+            return Response(data=data, status=status.HTTP_201_CREATED)
+        return Response(
+            {"result": "error", 'message': 'An error occurred'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
 class DeleteProfile(APIView):
     """Delete a profile"""
 
@@ -110,7 +147,7 @@ class ProfileDetails(APIView):
     """Single profile details"""
 
     model = Profile
-    serializer_class = CreateProfileSerializer
+    serializer_class = ProfileDetailsSerializer
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 

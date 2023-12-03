@@ -1,8 +1,7 @@
 from json import JSONDecodeError
 
 from django.http import JsonResponse
-from django.shortcuts import render
-from rest_framework import status, permissions, generics
+from rest_framework import status, permissions
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.parsers import JSONParser
 from rest_framework.response import Response

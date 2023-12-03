@@ -21,6 +21,7 @@ class Profile(AbstractUser):
     additional_address = models.TextField(max_length=50, blank=True, null=True)
     date_created = models.DateTimeField(auto_created=True, auto_now_add=True)
     email_verified = models.BooleanField(default=False)
+    web3_address = models.CharField(blank=True, null=True, max_length=160)
     username = None
 
     objects = UserManager()

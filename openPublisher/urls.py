@@ -19,7 +19,6 @@ from django.urls import path, include
 from rest_framework import routers
 from rest_framework.authtoken.views import obtain_auth_token
 
-
 router = routers.DefaultRouter()
 
 urlpatterns = router.urls
@@ -29,5 +28,6 @@ urlpatterns += [
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
     path('profiles/', include('accounts.urls', namespace="profiles")),
     path('journals/', include('journals.urls', namespace="journals")),
+    path('manuscripts/', include('manuscripts.urls', namespace="journals")),
     path('auth-token/', obtain_auth_token),  # Gives us access to auth_token
 ]
