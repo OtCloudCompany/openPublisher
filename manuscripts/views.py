@@ -1,4 +1,6 @@
 import json
+
+from manuscripts.models import Manuscript
 from utilities import CustomUUIDEncoder
 from json import JSONDecodeError
 from django.conf import settings
@@ -6,7 +8,6 @@ from django.http import JsonResponse
 from rest_framework import permissions, status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.parsers import JSONParser
-from rest_framework.response import Response
 from rest_framework.views import APIView
 
 
@@ -14,12 +15,13 @@ class SubmitManuscript(APIView):
 
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAdminUser]
+    model = Manuscript
 
     def post(self, request, *args, **kwargs):
 
         try:
             manuscript_data = JSONParser().parse(request)
-            manuscript_data.update({"created_by": self.request.user.pk})
+            manuscript_data.update({"submitted_by_id": self.request.user.pk})
         except JSONDecodeError:
             return JsonResponse(
                 {"result": "error", "message": "JSON decoding error"},
@@ -56,12 +58,21 @@ class SubmitManuscript(APIView):
 
         resp_data = {
             "status": tx_receipt.status,
-            # "tx_hash": tx_receipt.transactionHash,
             "block_number": tx_receipt.blockNumber,
             "gas_used": tx_receipt.gasUsed,
-            "tx_index": tx_receipt.transactionIndex,
-            # "from": settings.W3_OWNERS_ADDRESS,
-            # "to": tx_receipt.to,
+            "tx_index": tx_receipt.transactionIndex
         }
+
+        if tx_receipt.status == 1:  # save manuscript data to db
+            manuscript = Manuscript.objects.create(
+                title=manuscript_data.get("title"),
+                abstract=manuscript_data.get("abstract"),
+                keywords=manuscript_data.get("keywords"),
+                submitted_by_id=manuscript_data.get("submitted_by_id"),
+            )
+            manuscript.authors.set(manuscript_data.get("authors"))
+
+            new_manuscript = manuscript.save()
+            resp_data["manuscript_id"] = new_manuscript.pk
 
         return JsonResponse(data=resp_data, status=status.HTTP_201_CREATED)
