@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.10;
 
 contract JournalContract {
 
@@ -55,5 +55,10 @@ contract JournalContract {
             }
         }
         return result;
+    }
+
+    function getManuscriptById(uint256 manuscriptId) public view returns (Manuscript memory) {
+        require(manuscriptId < manuscripts.length, "Manuscript does not exist");
+        return manuscripts[manuscriptId];
     }
 }

@@ -1,6 +1,8 @@
 import json
 
-from manuscripts.models import Manuscript
+from django.db.transaction import atomic
+
+from manuscripts.models import Manuscript, Author
 from utilities import CustomUUIDEncoder
 from json import JSONDecodeError
 from django.conf import settings
@@ -9,6 +11,8 @@ from rest_framework import permissions, status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
+from django.db import transaction
+
 
 
 class SubmitManuscript(APIView):
@@ -17,6 +21,7 @@ class SubmitManuscript(APIView):
     permission_classes = [permissions.IsAdminUser]
     model = Manuscript
 
+    @transaction.atomic
     def post(self, request, *args, **kwargs):
 
         try:
@@ -27,6 +32,21 @@ class SubmitManuscript(APIView):
                 {"result": "error", "message": "JSON decoding error"},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        # First create the author(s)
+        authors_data = manuscript_data.get("authors", [])
+        author_ids = []
+
+        for author_data in authors_data:
+            # Create or get the author
+            author, created = Author.objects.get_or_create(
+                email=author_data['email'],
+                defaults={
+                    'first_name': author_data['first_name'],
+                    'last_name': author_data['last_name'],
+                    'affiliation': author_data['affiliation']
+                }
+            )
+            author_ids.append(author.id)
 
         web3 = settings.W3
         if not web3.is_connected():
@@ -53,7 +73,11 @@ class SubmitManuscript(APIView):
         }
 
         signed_txn = web3.eth.account.sign_transaction(transaction, settings.W3_PRIV_KEY)
-        tx_hash = web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        try:
+            tx_hash = web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        except Exception as e:
+            print("send_raw_transaction failed", e)
+
         tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
 
         resp_data = {
@@ -64,15 +88,22 @@ class SubmitManuscript(APIView):
         }
 
         if tx_receipt.status == 1:  # save manuscript data to db
-            manuscript = Manuscript.objects.create(
-                title=manuscript_data.get("title"),
-                abstract=manuscript_data.get("abstract"),
-                keywords=manuscript_data.get("keywords"),
-                submitted_by_id=manuscript_data.get("submitted_by_id"),
-            )
-            manuscript.authors.set(manuscript_data.get("authors"))
 
-            new_manuscript = manuscript.save()
-            resp_data["manuscript_id"] = new_manuscript.pk
+            try:
+
+                manuscript = Manuscript.objects.create(
+                    title=manuscript_data.get("title"),
+                    abstract=manuscript_data.get("abstract"),
+                    keywords=manuscript_data.get("keywords"),
+                    submitted_by_id=manuscript_data.get("submitted_by_id"),
+                )
+                # Update the authors field to use IDs instead of dict
+                manuscript_data['authors'] = author_ids
+                manuscript.authors.set(author_ids)
+
+                resp_data["manuscript_id"] = manuscript.pk
+            except Exception as e:
+                print("Error saving manuscript to db", e)
+                resp_data["error"] = f"Error saving manuscript to db: {e}"
 
         return JsonResponse(data=resp_data, status=status.HTTP_201_CREATED)

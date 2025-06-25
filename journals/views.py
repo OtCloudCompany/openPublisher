@@ -128,7 +128,7 @@ class ListJournals(APIView):
 
     def get(self, request):
         journals = self.model.objects.all()
-        serializer = JournalSerializer(instance=journals, many=True)
+        serializer = self.serializer_class(instance=journals, many=True)
 
         return Response(data=serializer.data, status=status.HTTP_200_OK)
 

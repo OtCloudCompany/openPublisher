@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 from django.conf.locale.en import formats as en_formats
 from web3 import Web3
+from local_secrets import secrets
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,7 +32,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
-
     'accounts',
     'journals',
     'manuscripts'
@@ -69,17 +69,19 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'openPublisher.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    "default": {
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": secrets.get('MYSQL_DB'),
+        "USER": secrets.get('MYSQL_USER'),
+        "PASSWORD": secrets.get('MYSQL_PASSWORD'),
+        "HOST": secrets.get('MYSQL_HOST'),
+        "PORT": secrets.get('MYSQL_PORT'),
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -170,7 +172,7 @@ CORS_ALLOW_CREDENTIALS = True
 # WEB3 TOOLS
 W3 = Web3(Web3.HTTPProvider('https://sepolia.infura.io/v3/33402a9c3c794b65ae627ce14205f81a'))
 W3_OWNERS_ADDRESS = Web3.to_checksum_address("0x674938B41B6ed666989f4C476A721224288F0b1E".lower())
-W3_CONTRACT_ADDRESS = Web3.to_checksum_address("0x0f20c349b63e3f42c64dcd70b40530869c6c99c5")
+W3_CONTRACT_ADDRESS = Web3.to_checksum_address("0x4aaFe4f589a0B63064537b6A6078c77094540220")
 W3_PRIV_KEY = '0xd3af8e91942b26667d2d0e04bbc06b9cbe67b162daf8c3db3e31aac1d2f41eb5'  # open('priv_key.txt').readline()
 W3_TEST_ACCOUNTS = [
     W3_OWNERS_ADDRESS,

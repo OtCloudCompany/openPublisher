@@ -20,11 +20,11 @@ class ListProfiles(APIView):
 
     model = Profile
     authentication_classes = [TokenAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAdminUser]
 
     def get(self, request):
         profiles = self.model.objects.all()
-        serializer = ProfileSerializer
+        serializer = ProfileSerializer(instance=profiles, many=True)
 
         return Response(data=serializer.data)
 
@@ -113,12 +113,15 @@ class CreateAddress(APIView):
             web3_account = self.web3.eth.account.create()
             profile.web3_address = web3_account.address
             profile.save()
-            data = JSONParser().parse(profile)
+            serializer = ProfileSerializer(profile)
+            data = serializer.data
             data['web3_key'] = self.web3.to_hex(web3_account.key)
+            # data = JSONParser().parse(profile)
+            # data['web3_key'] = self.web3.to_hex(web3_account.key)
 
             return Response(data=data, status=status.HTTP_201_CREATED)
         return Response(
-            {"result": "error", 'message': 'An error occurred'},
+            {"result": "error", 'message': 'An error occurred, no connection to web3 established.'},
             status=status.HTTP_400_BAD_REQUEST
         )
 

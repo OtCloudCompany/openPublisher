@@ -2,12 +2,13 @@ from accounts.models import Profile
 from rest_framework import serializers
 
 
-class ProfileSerializer:
-    web3_key = serializers.SerializerMethodField()
+class ProfileSerializer(serializers.ModelSerializer):
+    # web3_key = serializers.SerializerMethodField()
     class Meta:
         model = Profile
         fields = ['id', 'first_name', 'last_name', 'other_name', 'email', 'primary_phone', 'national_id',
-                  'secondary_phone', 'additional_email', 'address', 'additional_address', 'web3_address', 'web3_key']
+                  'secondary_phone', 'additional_email', 'address', 'additional_address', 'web3_address']
+
 
 
 class CreateProfileSerializer(serializers.ModelSerializer):
