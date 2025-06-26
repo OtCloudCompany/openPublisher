@@ -1,7 +1,5 @@
 import json
 
-from django.db.transaction import atomic
-
 from manuscripts.models import Manuscript, Author
 from utilities import CustomUUIDEncoder
 from json import JSONDecodeError
@@ -13,10 +11,95 @@ from rest_framework.parsers import JSONParser
 from rest_framework.views import APIView
 from django.db import transaction
 
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.response import Response
+
+class ManuscriptPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+
+class GetLocalManuscripts(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = ManuscriptPagination
+    
+    def get(self, request, *args, **kwargs):
+        # Get all manuscripts
+        manuscripts = Manuscript.objects.all().order_by('-submitted')
+        
+        # Initialize paginator
+        paginator = self.pagination_class()
+        paginated_manuscripts = paginator.paginate_queryset(manuscripts, request)
+        
+        # Prepare the response data
+        manuscript_list = []
+        for manuscript in paginated_manuscripts:
+            manuscript_data = {
+                'id': manuscript.pk,
+                'title': manuscript.title,
+                'abstract': manuscript.abstract,
+                'keywords': manuscript.keywords,
+                'tx_receipt': manuscript.tx_receipt,
+                'submitted_by': manuscript.submitted_by.username if manuscript.submitted_by else None,
+                'authors': [
+                    {
+                        'id': author.id,
+                        'first_name': author.first_name,
+                        'last_name': author.last_name,
+                        'email': author.email,
+                        'affiliation': author.affiliation
+                    }
+                    for author in manuscript.authors.all()
+                ],
+                'submitted': manuscript.submitted
+            }
+            manuscript_list.append(manuscript_data)
+        
+        return paginator.get_paginated_response(manuscript_list)
+
+
+class GetLocalManuscriptById(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, manuscript_id, *args, **kwargs):
+        try:
+            manuscript = Manuscript.objects.get(pk=manuscript_id)
+            
+            # Prepare the detailed manuscript data
+            manuscript_data = {
+                'id': manuscript.pk,
+                'title': manuscript.title,
+                'abstract': manuscript.abstract,
+                'keywords': manuscript.keywords,
+                'tx_receipt': manuscript.tx_receipt,
+                'submitted_by': manuscript.submitted_by.username if manuscript.submitted_by else None,
+                'authors': [
+                    {
+                        'id': author.id,
+                        'first_name': author.first_name,
+                        'last_name': author.last_name,
+                        'email': author.email,
+                        'affiliation': author.affiliation
+                    }
+                    for author in manuscript.authors.all()
+                ],
+                'submitted': manuscript.submitted,
+            }
+            
+            return JsonResponse(manuscript_data, status=status.HTTP_200_OK)
+            
+        except Manuscript.DoesNotExist:
+            return JsonResponse(
+                {"result": "error", "message": f"Manuscript {manuscript_id} not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
 
 class SubmitManuscript(APIView):
-
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAdminUser]
     model = Manuscript
@@ -95,6 +178,7 @@ class SubmitManuscript(APIView):
                     title=manuscript_data.get("title"),
                     abstract=manuscript_data.get("abstract"),
                     keywords=manuscript_data.get("keywords"),
+                    tx_receipt=tx_receipt,
                     submitted_by_id=manuscript_data.get("submitted_by_id"),
                 )
                 # Update the authors field to use IDs instead of dict

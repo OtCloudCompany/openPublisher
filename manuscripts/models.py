@@ -21,6 +21,7 @@ class Manuscript(models.Model):
     abstract = models.TextField(max_length=500)
     authors = models.ManyToManyField(to=Author, blank=True,)
     keywords = models.JSONField()  # list of strings
+    tx_receipt = models.TextField(max_length=500, blank=True)
     submitted_by = models.ForeignKey(to=Profile, on_delete=models.DO_NOTHING)
     submitted = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)
