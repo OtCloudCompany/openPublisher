@@ -12,13 +12,60 @@ from rest_framework.views import APIView
 from django.db import transaction
 
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.response import Response
+
+
+class Sepolia:
+    def __init__(self):
+        self.web3 = settings.W3
+        with open("JournalContract.json", 'r') as f:
+            compiled_contract = json.load(f)
+        self.abi = compiled_contract['abi']
+        self.contract = self.web3.eth.contract(
+            address=settings.W3_CONTRACT_ADDRESS,
+            abi=self.abi
+        )
+
+    def post_manuscript(self, manuscript):
+        global tx_hash
+        if not self.web3.is_connected():
+            return JsonResponse(
+                {"result": "error", "message": "No connection to web3 endpoint"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        with open("JournalContract.json", 'r') as f:
+            compiled_contract = json.load(f)
+
+        abi = compiled_contract['abi']
+        contract = self.web3.eth.contract(address=settings.W3_CONTRACT_ADDRESS, abi=abi)
+
+        json_string = json.dumps(manuscript, cls=CustomUUIDEncoder)
+        encoded_data = contract.encodeABI(fn_name='publishManuscript', args=[json_string])
+        nonce = self.web3.eth.get_transaction_count(settings.W3_OWNERS_ADDRESS)
+        transaction = {
+            'to': settings.W3_CONTRACT_ADDRESS,
+            'gas': 2000000,
+            'gasPrice': self.web3.eth.gas_price,
+            'nonce': nonce,
+            'data': encoded_data,
+        }
+
+        signed_txn = self.web3.eth.account.sign_transaction(transaction, settings.W3_PRIV_KEY)
+        try:
+            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        except Exception as e:
+            print("send_raw_transaction failed", e)
+            return {'error': f'Error sending raw transaction: {e}'}
+
+        tx_receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+
+        return tx_receipt
+
 
 class ManuscriptPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
-
 
 
 class GetLocalManuscripts(APIView):
@@ -41,8 +88,8 @@ class GetLocalManuscripts(APIView):
                 'id': manuscript.pk,
                 'title': manuscript.title,
                 'abstract': manuscript.abstract,
+                'journal_id': manuscript.journal_id_id,
                 'keywords': manuscript.keywords,
-                'tx_receipt': manuscript.tx_receipt,
                 'submitted_by': manuscript.submitted_by.username if manuscript.submitted_by else None,
                 'authors': [
                     {
@@ -54,7 +101,8 @@ class GetLocalManuscripts(APIView):
                     }
                     for author in manuscript.authors.all()
                 ],
-                'submitted': manuscript.submitted
+                'submitted': manuscript.submitted,
+                'status': manuscript.status
             }
             manuscript_list.append(manuscript_data)
         
@@ -74,8 +122,8 @@ class GetLocalManuscriptById(APIView):
                 'id': manuscript.pk,
                 'title': manuscript.title,
                 'abstract': manuscript.abstract,
-                'keywords': manuscript.keywords,
-                'tx_receipt': manuscript.tx_receipt,
+                'keywords': [keyword.get('keyword') for keyword in manuscript.keywords],
+                'journal_id': manuscript.journal_id_id,
                 'submitted_by': manuscript.submitted_by.username if manuscript.submitted_by else None,
                 'authors': [
                     {
@@ -88,8 +136,22 @@ class GetLocalManuscriptById(APIView):
                     for author in manuscript.authors.all()
                 ],
                 'submitted': manuscript.submitted,
+                # 'journal_id': manuscript
+                'status': manuscript.status,
+                'provenance': [
+                    {
+                        'id': event.id,
+                        'manuscript_id': event.manuscript_id,
+                        'event_type': event.event_type,
+                        'timestamp': event.timestamp,
+                        'actor': event.actor_id,
+                        'description': event.description,
+                        'txn_hash': event.txn_hash,
+                        'metadata': event.metadata,
+                    }
+                    for event in manuscript.get_provenance()
+                ]
             }
-            
             return JsonResponse(manuscript_data, status=status.HTTP_200_OK)
             
         except Manuscript.DoesNotExist:
@@ -110,6 +172,7 @@ class SubmitManuscript(APIView):
         try:
             manuscript_data = JSONParser().parse(request)
             manuscript_data.update({"submitted_by_id": self.request.user.pk})
+            manuscript_data.update({"journal_id": kwargs.get("journal_id")})
         except JSONDecodeError:
             return JsonResponse(
                 {"result": "error", "message": "JSON decoding error"},
@@ -131,37 +194,8 @@ class SubmitManuscript(APIView):
             )
             author_ids.append(author.id)
 
-        web3 = settings.W3
-        if not web3.is_connected():
-            return JsonResponse(
-                {"result": "error", "message": "No connection to web3 endpoint"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-        with open("JournalContract.json", 'r') as f:
-            compiled_contract = json.load(f)
-
-        abi = compiled_contract['abi']
-        contract = web3.eth.contract(address=settings.W3_CONTRACT_ADDRESS, abi=abi)
-
-        json_string = json.dumps(manuscript_data, cls=CustomUUIDEncoder)
-        encoded_data = contract.encodeABI(fn_name='publishManuscript', args=[json_string])
-        nonce = web3.eth.get_transaction_count(settings.W3_OWNERS_ADDRESS)
-        transaction = {
-            'to': settings.W3_CONTRACT_ADDRESS,
-            'gas': 2000000,
-            'gasPrice': web3.eth.gas_price,
-            'nonce': nonce,
-            'data': encoded_data,
-        }
-
-        signed_txn = web3.eth.account.sign_transaction(transaction, settings.W3_PRIV_KEY)
-        try:
-            tx_hash = web3.eth.send_raw_transaction(signed_txn.rawTransaction)
-        except Exception as e:
-            print("send_raw_transaction failed", e)
-
-        tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
+        sepolia = Sepolia(settings.SEPOLIA_ADDRESS)
+        tx_receipt = sepolia.post_manuscript(manuscript_data)
 
         resp_data = {
             "status": tx_receipt.status,
@@ -173,12 +207,11 @@ class SubmitManuscript(APIView):
         if tx_receipt.status == 1:  # save manuscript data to db
 
             try:
-
                 manuscript = Manuscript.objects.create(
                     title=manuscript_data.get("title"),
                     abstract=manuscript_data.get("abstract"),
                     keywords=manuscript_data.get("keywords"),
-                    tx_receipt=tx_receipt,
+                    journal_id=manuscript_data.get("journal_id"),
                     submitted_by_id=manuscript_data.get("submitted_by_id"),
                 )
                 # Update the authors field to use IDs instead of dict
@@ -186,8 +219,47 @@ class SubmitManuscript(APIView):
                 manuscript.authors.set(author_ids)
 
                 resp_data["manuscript_id"] = manuscript.pk
+
+                # record submission event
+                manuscript.record_submission(actor=request.user, txn_hash=tx_receipt)
             except Exception as e:
                 print("Error saving manuscript to db", e)
                 resp_data["error"] = f"Error saving manuscript to db: {e}"
 
         return JsonResponse(data=resp_data, status=status.HTTP_201_CREATED)
+
+
+class ChangeManuscriptStatus(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAdminUser]
+    model = Manuscript
+
+    def post(self, request, manuscript_id, *args, **kwargs):
+        try:
+            manuscript = self.model.objects.get(pk=manuscript_id)
+        except self.model.DoesNotExist:
+            return JsonResponse(
+                {"result": "error", 'message': 'Manuscript does not exist'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        req_status = self.request.GET.get("status")
+        if req_status not in dict(Manuscript.Status.choices):
+            return JsonResponse(
+                {"result": "error", "message": "Invalid status"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        sepolia = Sepolia()
+        if req_status == 'ACCEPTED':
+            manuscript.status = Manuscript.Status.ACCEPTED
+            tx_receipt = sepolia.post_manuscript(manuscript.to_json())
+            manuscript.record_acceptance(actor=request.user, txn_hash=tx_receipt)
+        if req_status == 'REJECTED':
+            manuscript.status = Manuscript.Status.REJECTED
+            tx_receipt = sepolia.post_manuscript(manuscript.to_json())
+            manuscript.record_rejection(actor=request.user, reason='', txn_hash=tx_receipt)
+
+        return JsonResponse(
+            {"result": "success", "message": "Manuscript status updated"},
+            status=status.HTTP_200_OK
+        )
