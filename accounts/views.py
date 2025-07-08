@@ -20,7 +20,7 @@ class ListProfiles(APIView):
 
     model = Profile
     authentication_classes = [TokenAuthentication]
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         profiles = self.model.objects.all()
@@ -117,7 +117,6 @@ class CreateAddress(APIView):
             data = serializer.data
             data['web3_key'] = self.web3.to_hex(web3_account.key)
             # data = JSONParser().parse(profile)
-            # data['web3_key'] = self.web3.to_hex(web3_account.key)
 
             return Response(data=data, status=status.HTTP_201_CREATED)
         return Response(

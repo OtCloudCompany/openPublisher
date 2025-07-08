@@ -1,17 +1,22 @@
 import json
 
-from manuscripts.models import Manuscript, Author
+from django.shortcuts import get_object_or_404
+
+from accounts.models import Profile
+from journals.models import Journal
+from manuscripts.models import Manuscript, Author, ManuscriptEvent, ReviewerAssignment
 from utilities import CustomUUIDEncoder
 from json import JSONDecodeError
 from django.conf import settings
 from django.http import JsonResponse
 from rest_framework import permissions, status
-from rest_framework.authentication import TokenAuthentication
 from rest_framework.parsers import JSONParser
-from rest_framework.views import APIView
 from django.db import transaction
 
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.authentication import TokenAuthentication
 
 
 class Sepolia:
@@ -62,7 +67,7 @@ class Sepolia:
         return tx_receipt
 
 
-class ManuscriptPagination(PageNumberPagination):
+class Pagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
@@ -71,7 +76,7 @@ class ManuscriptPagination(PageNumberPagination):
 class GetLocalManuscripts(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
-    pagination_class = ManuscriptPagination
+    pagination_class = Pagination
     
     def get(self, request, *args, **kwargs):
         # Get all manuscripts
@@ -263,3 +268,132 @@ class ChangeManuscriptStatus(APIView):
             {"result": "success", "message": "Manuscript status updated"},
             status=status.HTTP_200_OK
         )
+
+class AssignReviewer(APIView):
+
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        journal_id = kwargs.get("journal_id")
+        manuscript_id = kwargs.get("manuscript_id")
+        selected_reviewer = self.request.GET.get("selected_reviewer")
+        due_date = self.request.GET.get("due_date")  # Optional due date parameter
+
+
+        if not selected_reviewer:
+            return Response(
+                {"result": "error", "message": "No reviewer selected"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            with transaction.atomic():
+                # Get the journal and verify it exists
+                journal = get_object_or_404(Journal, id=journal_id)
+
+                # Get the manuscript and verify it exists and belongs to the journal
+                manuscript = get_object_or_404(
+                    Manuscript,
+                    id=manuscript_id,
+                    journal_id=journal
+                )
+
+                # Get the reviewer profile
+                reviewer = get_object_or_404(
+                    Profile,
+                    id=selected_reviewer,
+                )
+
+                # Check if manuscript is in a state where it can be assigned to a reviewer
+                if manuscript.status not in [Manuscript.Status.ACCEPTED, Manuscript.Status.REVIEW]:
+                    return Response(
+                        {
+                            "result": "error",
+                            "message": "Manuscript is not in a state where reviewers can be assigned"
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Check if reviewer is already assigned to this manuscript
+                if ReviewerAssignment.objects.filter(
+                        manuscript=manuscript,
+                        reviewer=reviewer,
+                        status__in=[
+                            ReviewerAssignment.Status.PENDING,
+                            ReviewerAssignment.Status.ACCEPTED
+                        ]
+                ).exists():
+                    return Response(
+                        {
+                            "result": "error",
+                            "message": "Reviewer is already assigned to this manuscript"
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                # Create the reviewer assignment
+                assignment = ReviewerAssignment.objects.create(
+                    manuscript=manuscript,
+                    reviewer=reviewer,
+                    status=ReviewerAssignment.Status.PENDING,
+                    due_date=due_date if due_date else None
+                )
+
+                # Assign the reviewer
+                manuscript.reviewers.add(reviewer)
+
+                # Update manuscript status if needed
+                if manuscript.status == Manuscript.Status.SUBMISSION:
+                    manuscript.status = Manuscript.Status.REVIEW
+                    manuscript.save()
+                print('================')
+                # Record the event
+                manuscript.create_event(
+                    event_type=ManuscriptEvent.EventType.REVIEWER_ASSIGNED,
+                    actor=request.user,
+                    txn_hash='',
+                    metadata={
+                        'reviewer_id': str(reviewer.id),
+                        'reviewer_name': f"{reviewer.first_name} {reviewer.last_name}",
+                        'reviewer_email': reviewer.email
+                    }
+                )
+                print('================', assignment)
+                resp_data = {
+                    "result": "success",
+                    "message": "Reviewer assigned successfully",
+                    "data": {
+                        "manuscript_id": manuscript.id,
+                        "manuscript_title": manuscript.title,
+                        "reviewer": {
+                            "id": str(reviewer.id),
+                            "name": f"{reviewer.first_name} {reviewer.last_name}",
+                            "email": reviewer.email,
+                            "web3_address": reviewer.web3_address,
+                        },
+                        "status": manuscript.status
+                    }
+                }
+                # Return success response with reviewer details
+                return Response(resp_data, status=status.HTTP_200_OK)
+
+        except Journal.DoesNotExist:
+            return Response(
+                {"result": "error", "message": "Journal not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Manuscript.DoesNotExist:
+            return Response(
+                {"result": "error", "message": "Manuscript not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Profile.DoesNotExist:
+            return Response(
+                {"result": "error", "message": "Reviewer not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"result": "error", "message": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

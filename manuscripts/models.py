@@ -44,6 +44,14 @@ class Manuscript(models.Model):
         default=Status.SUBMISSION
     )
 
+    # Add the many-to-many relationship for reviewers
+    reviewers = models.ManyToManyField(
+        'accounts.Profile',
+        related_name='reviewing_manuscripts',
+        blank=True,
+        through='manuscripts.ReviewerAssignment'
+    )
+
     def create_event(self, event_type, actor, txn_hash, description='', metadata=None,):
         """
         Create a new event for this manuscript
@@ -142,6 +150,54 @@ class Manuscript(models.Model):
 
     def __str__(self):
         return self.title
+
+
+# Create a through model to store additional information about the reviewer assignment
+class ReviewerAssignment(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pending'
+        ACCEPTED = 'ACCEPTED', 'Accepted'
+        DECLINED = 'DECLINED', 'Declined'
+        COMPLETED = 'COMPLETED', 'Completed'
+        WITHDRAWN = 'WITHDRAWN', 'Withdrawn'
+
+    manuscript = models.ForeignKey(
+        'manuscripts.Manuscript',
+        on_delete=models.CASCADE,
+        related_name='reviewer_assignments'
+    )
+    reviewer = models.ForeignKey(
+        'accounts.Profile',
+        on_delete=models.CASCADE,
+        related_name='manuscript_assignments'
+    )
+    assigned_date = models.DateTimeField(auto_now_add=True)
+    due_date = models.DateTimeField(null=True, blank=True)
+    completed_date = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING
+    )
+    review_comment = models.TextField(blank=True)
+    recommendation = models.CharField(
+        max_length=20,
+        choices=[
+            ('ACCEPT', 'Accept'),
+            ('MINOR_REVISION', 'Minor Revision'),
+            ('MAJOR_REVISION', 'Major Revision'),
+            ('REJECT', 'Reject')
+        ],
+        null=True,
+        blank=True
+    )
+
+    class Meta:
+        unique_together = ['manuscript', 'reviewer']
+        ordering = ['-assigned_date']
+
+    def __str__(self):
+        return f"{self.reviewer} - {self.manuscript} ({self.status})"
 
 
 class ManuscriptEvent(models.Model):
