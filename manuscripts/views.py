@@ -20,6 +20,55 @@ from rest_framework.authentication import TokenAuthentication
 
 
 class Sepolia:
+    def record_reviewer_assignment(self, manuscript_id, reviewer_id, metadata):
+        """
+        Records a reviewer assignment event on the contract.
+        Args:
+            manuscript_id: The ID of the manuscript.
+            reviewer_id: The ID of the reviewer.
+            metadata: Additional metadata (dict) to store with the event.
+        Returns:
+            Transaction receipt or error dict.
+        """
+        if not self.web3.is_connected():
+            return JsonResponse(
+                {"result": "error", "message": "No connection to web3 endpoint"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        with open("JournalContract.json", 'r') as f:
+            compiled_contract = json.load(f)
+        abi = compiled_contract['abi']
+        contract = self.web3.eth.contract(address=settings.W3_CONTRACT_ADDRESS, abi=abi)
+
+        # Prepare the data for the contract call
+        metadata_json = json.dumps(metadata, cls=CustomUUIDEncoder)
+        encoded_data = contract.encodeABI(
+            fn_name='recordReviewerAssignment',
+            args=[str(manuscript_id), str(reviewer_id), metadata_json]
+        )
+        nonce = self.web3.eth.get_transaction_count(settings.W3_OWNERS_ADDRESS)
+        transaction = {
+            'to': settings.W3_CONTRACT_ADDRESS,
+            'gas': 2000000,
+            'gasPrice': self.web3.eth.gas_price,
+            'nonce': nonce,
+            'data': encoded_data,
+        }
+
+        signed_txn = self.web3.eth.account.sign_transaction(transaction, settings.W3_PRIV_KEY)
+        try:
+            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
+        except Exception as e:
+            return {'error': f'Error sending raw transaction: {e}'}
+
+        tx_receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+        if not tx_receipt:
+            return JsonResponse(
+                {"result": "error", "message": "Transaction receipt not found"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        return tx_receipt
     def __init__(self):
         self.web3 = settings.W3
         with open("JournalContract.json", 'r') as f:
@@ -63,6 +112,11 @@ class Sepolia:
             return {'error': f'Error sending raw transaction: {e}'}
 
         tx_receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+        if not tx_receipt:
+            return JsonResponse(
+                {"result": "error", "message": "Transaction receipt not found"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
         return tx_receipt
 
@@ -212,11 +266,24 @@ class SubmitManuscript(APIView):
         if tx_receipt.status == 1:  # save manuscript data to db
 
             try:
+                journal_id = manuscript_data.get("journal_id")
+                if not journal_id:
+                    return JsonResponse(
+                        {"result": "error", "message": "Journal ID is required"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                # Ensure the journal exists
+                journal = get_object_or_404(Journal, pk=journal_id)
+            except Exception as e:
+                print(f"Error finding journal with id {journal_id} ", e)
+                resp_data["error"] = f"Error saving manuscript to db: {e}"
+
+            try:
                 manuscript = Manuscript.objects.create(
                     title=manuscript_data.get("title"),
                     abstract=manuscript_data.get("abstract"),
                     keywords=manuscript_data.get("keywords"),
-                    journal_id=manuscript_data.get("journal_id"),
+                    journal_id=journal,
                     submitted_by_id=manuscript_data.get("submitted_by_id"),
                 )
                 # Update the authors field to use IDs instead of dict
@@ -226,7 +293,10 @@ class SubmitManuscript(APIView):
                 resp_data["manuscript_id"] = manuscript.pk
 
                 # record submission event
-                manuscript.record_submission(actor=request.user, txn_hash=tx_receipt)
+                txn_hash = tx_receipt.transactionHash.hex()
+                if not txn_hash.startswith('0x'):
+                    txn_hash = '0x' + txn_hash
+                manuscript.record_submission(actor=request.user, txn_hash=txn_hash)
             except Exception as e:
                 print("Error saving manuscript to db", e)
                 resp_data["error"] = f"Error saving manuscript to db: {e}"
@@ -258,11 +328,17 @@ class ChangeManuscriptStatus(APIView):
         if req_status == 'ACCEPTED':
             manuscript.status = Manuscript.Status.ACCEPTED
             tx_receipt = sepolia.post_manuscript(manuscript.to_json())
-            manuscript.record_acceptance(actor=request.user, txn_hash=tx_receipt)
+            txn_hash = tx_receipt.transactionHash.hex()
+            if not txn_hash.startswith('0x'):
+                txn_hash = '0x' + txn_hash
+            manuscript.record_acceptance(actor=request.user, txn_hash=txn_hash)
         if req_status == 'REJECTED':
             manuscript.status = Manuscript.Status.REJECTED
             tx_receipt = sepolia.post_manuscript(manuscript.to_json())
-            manuscript.record_rejection(actor=request.user, reason='', txn_hash=tx_receipt)
+            txn_hash = tx_receipt.transactionHash.hex()
+            if not txn_hash.startswith('0x'):
+                txn_hash = '0x' + txn_hash
+            manuscript.record_rejection(actor=request.user, reason='', txn_hash=txn_hash)
 
         return JsonResponse(
             {"result": "success", "message": "Manuscript status updated"},
@@ -316,14 +392,15 @@ class AssignReviewer(APIView):
                     )
 
                 # Check if reviewer is already assigned to this manuscript
-                if ReviewerAssignment.objects.filter(
+                reviewer_is_assigned = ReviewerAssignment.objects.filter(
                         manuscript=manuscript,
                         reviewer=reviewer,
                         status__in=[
                             ReviewerAssignment.Status.PENDING,
                             ReviewerAssignment.Status.ACCEPTED
                         ]
-                ).exists():
+                ).exists()
+                if reviewer_is_assigned:
                     return Response(
                         {
                             "result": "error",
@@ -339,14 +416,36 @@ class AssignReviewer(APIView):
                     due_date=due_date if due_date else None
                 )
 
+                # Record reviewer assignment on the contract
+                sepolia = Sepolia()
+                metadata = {
+                    'reviewer_id': str(reviewer.id),
+                    'reviewer_name': f"{reviewer.first_name} {reviewer.last_name}",
+                    'reviewer_email': reviewer.email
+                }
+                tx_receipt = sepolia.record_reviewer_assignment(manuscript.id, reviewer.id, metadata)
+                txn_hash = ''
+                if isinstance(tx_receipt, dict) and 'error' in tx_receipt:
+                    # Optionally handle error, e.g. log or notify
+                    return Response(
+                        {"result": "error", "message": tx_receipt['error']},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+                else:
+                    txn_hash = tx_receipt.transactionHash.hex()
+                    if not txn_hash.startswith('0x'):
+                        txn_hash = '0x' + txn_hash
+
                 # Assign the reviewer
                 manuscript.reviewers.add(reviewer)
+
+                sepolia = Sepolia()
+                
 
                 # Update manuscript status if needed
                 if manuscript.status == Manuscript.Status.SUBMISSION:
                     manuscript.status = Manuscript.Status.REVIEW
                     manuscript.save()
-                print('================')
                 # Record the event
                 manuscript.create_event(
                     event_type=ManuscriptEvent.EventType.REVIEWER_ASSIGNED,
@@ -358,7 +457,6 @@ class AssignReviewer(APIView):
                         'reviewer_email': reviewer.email
                     }
                 )
-                print('================', assignment)
                 resp_data = {
                     "result": "success",
                     "message": "Reviewer assigned successfully",
