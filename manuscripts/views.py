@@ -57,13 +57,13 @@ class Sepolia:
 
         signed_txn = self.web3.eth.account.sign_transaction(transaction, settings.W3_PRIV_KEY)
         try:
-            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
         except Exception as e:
-            print("send_raw_transaction failed", e)
+            # print("send_raw_transaction failed", e)
             return {'error': f'Error sending raw transaction: {e}'}
 
         tx_receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
-
+        
         return tx_receipt
 
 
@@ -199,7 +199,7 @@ class SubmitManuscript(APIView):
             )
             author_ids.append(author.id)
 
-        sepolia = Sepolia(settings.SEPOLIA_ADDRESS)
+        sepolia = Sepolia()
         tx_receipt = sepolia.post_manuscript(manuscript_data)
 
         resp_data = {

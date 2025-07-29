@@ -6,3 +6,4 @@ db.sqlite3
 /*/*.pyc
 */*.pyc
 local_secrets.py
+priv_key.txt
