@@ -29,9 +29,16 @@ def run():
     })
 
     signed_tx = web3.eth.account.sign_transaction(tx_data, settings.W3_PRIV_KEY)
-    tx_hash = web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+    tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
 
     tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
 
     contract_address = tx_receipt['contractAddress']
     print(f"Contract deployed at: {contract_address}")
+    
+    # Save the new ABI to JournalContract.json
+    import json
+    contract_json_path = os.path.join(settings.BASE_DIR, 'JournalContract.json')
+    with open(contract_json_path, 'w') as f:
+        json.dump({"abi": abi}, f, indent=2)
+    print(f"Updated ABI saved to {contract_json_path}")

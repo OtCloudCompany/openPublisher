@@ -109,11 +109,12 @@ class Manuscript(models.Model):
             metadata=metadata
         )
 
-    def record_review(self, reviewer, comments, actor, txn_hash):
+    def record_review(self, reviewer, comments, verdict, actor, txn_hash):
         """Record review submission"""
         metadata = {
             'reviewer_id': reviewer.id,
-            'comments': comments
+            'comments': comments,
+            'verdict': verdict,
         }
         return self.create_event(
             ManuscriptEvent.EventType.REVIEW_SUBMITTED,

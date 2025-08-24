@@ -10,7 +10,16 @@ contract JournalContract {
         uint256 dateSubmitted;
     }
 
+    struct ReviewerAssignment {
+        string manuscriptId;
+        string reviewerId;
+        string metadata;
+    }
+
     Manuscript[] public manuscripts;
+    ReviewerAssignment[] public reviewerAssignments;
+
+    event ReviewerAssigned(string manuscriptId, string reviewerId, string metadata);
 
     function publishManuscript(string memory manuscriptJson) public {
         manuscripts.push(Manuscript({
@@ -18,6 +27,11 @@ contract JournalContract {
             submittedBy: msg.sender,
             dateSubmitted: block.timestamp
         }));
+    }
+
+    function recordReviewerAssignment(string memory manuscriptId, string memory reviewerId, string memory metadata) public {
+        reviewerAssignments.push(ReviewerAssignment(manuscriptId, reviewerId, metadata));
+        emit ReviewerAssigned(manuscriptId, reviewerId, metadata);
     }
 
     function getManuscriptsCount() public view returns (uint256) {
