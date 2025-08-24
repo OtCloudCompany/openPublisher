@@ -16,10 +16,27 @@ contract JournalContract {
         string metadata;
     }
 
+    struct ReviewSubmission {
+        string manuscriptId;
+        string reviewerId;
+        string metadata;
+    }
+
+    struct AuthorCorrection {
+        string manuscriptId;
+        string authorId;
+        string metadata;
+        uint256 dateSubmitted;
+    }
+
     Manuscript[] public manuscripts;
     ReviewerAssignment[] public reviewerAssignments;
+    ReviewSubmission[] public reviewSubmissions;
+    AuthorCorrection[] public authorCorrections;
 
     event ReviewerAssigned(string manuscriptId, string reviewerId, string metadata);
+    event ReviewSubmitted(string manuscriptId, string reviewerId, string metadata);
+    event CorrectionSubmitted(string manuscriptId, string authorId, string metadata);
 
     function publishManuscript(string memory manuscriptJson) public {
         manuscripts.push(Manuscript({
@@ -32,6 +49,21 @@ contract JournalContract {
     function recordReviewerAssignment(string memory manuscriptId, string memory reviewerId, string memory metadata) public {
         reviewerAssignments.push(ReviewerAssignment(manuscriptId, reviewerId, metadata));
         emit ReviewerAssigned(manuscriptId, reviewerId, metadata);
+    }
+
+    function recordReviewSubmission(string memory manuscriptId, string memory reviewerId, string memory metadata) public {
+        reviewSubmissions.push(ReviewSubmission(manuscriptId, reviewerId, metadata));
+        emit ReviewSubmitted(manuscriptId, reviewerId, metadata);
+    }
+
+    function recordCorrections(string memory manuscriptId, string memory authorId, string memory metadata) public {
+        authorCorrections.push(AuthorCorrection({
+            manuscriptId: manuscriptId,
+            authorId: authorId,
+            metadata: metadata,
+            dateSubmitted: block.timestamp
+        }));
+        emit CorrectionSubmitted(manuscriptId, authorId, metadata);
     }
 
     function getManuscriptsCount() public view returns (uint256) {
