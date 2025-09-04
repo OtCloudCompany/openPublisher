@@ -112,7 +112,7 @@ class Manuscript(models.Model):
     def record_review(self, reviewer, comments, verdict, actor, txn_hash):
         """Record review submission"""
         metadata = {
-            'reviewer_id': reviewer.id,
+            'reviewer_id': str(reviewer.id),
             'comments': comments,
             'verdict': verdict,
         }

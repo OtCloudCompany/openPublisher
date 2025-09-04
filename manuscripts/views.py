@@ -178,8 +178,8 @@ class Pagination(PageNumberPagination):
 
 
 class GetLocalManuscripts(APIView):
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = []
+    permission_classes = []
     pagination_class = Pagination
     
     def get(self, request, *args, **kwargs):
@@ -219,8 +219,8 @@ class GetLocalManuscripts(APIView):
 
 
 class GetLocalManuscriptById(APIView):
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = []
+    permission_classes = []
     
     def get(self, request, manuscript_id, *args, **kwargs):
         try:
@@ -557,12 +557,23 @@ class SubmitReview(APIView):
                 reviewer_assignment = get_object_or_404(
                     ReviewerAssignment,
                     manuscript=manuscript,
-                    reviewer=request.user.profile,
+                    reviewer=request.user,
                     status__in=[ReviewerAssignment.Status.PENDING, ReviewerAssignment.Status.ACCEPTED]
                 )
 
                 # Parse the review data
-                review_data = JSONParser().parse(request)
+                try:
+                    review_data = JSONParser().parse(request)
+                except JSONDecodeError as e:
+                    return Response(
+                        {
+                            "result": "error",
+                            "message": f"Invalid JSON data: {str(e)}",
+                            "location": "JSON parsing"
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
                 comments = review_data.get('comments')
                 verdict = review_data.get('verdict')
 
@@ -570,54 +581,90 @@ class SubmitReview(APIView):
                     return Response(
                         {
                             "result": "error",
-                            "message": "Comments and verdict are required"
+                            "message": "Missing required fields: comments and verdict",
+                            "location": "Input validation"
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-                # Validate verdict
-                if verdict not in dict(ReviewerAssignment._meta.get_field('verdict').choices):
+                # Create metadata dictionary with explicit string conversion
+                try:
+                    metadata = {
+                        'reviewer_id': str(request.user.id),
+                        'reviewer_name': f"{request.user.first_name} {request.user.last_name}",
+                        'comments': str(comments),
+                        'recommendation': str(verdict)
+                    }
+                except Exception as e:
                     return Response(
                         {
                             "result": "error",
-                            "message": "Invalid verdict"
+                            "message": f"Error creating metadata: {str(e)}",
+                            "location": "Metadata creation"
                         },
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                # Record on blockchain
-                metadata = {
-                    'reviewer_id': str(request.user.profile.id),
-                    'reviewer_name': f"{request.user.profile.first_name} {request.user.profile.last_name}",
-                    'comments': comments,
-                    'verdict': verdict
-                }
-
-                sepolia = Sepolia()
-                tx_receipt = sepolia.record_review(
-                    manuscript_id=manuscript.id,
-                    reviewer_id=request.user.profile.id,
-                    metadata=metadata
-                )
-
-                if isinstance(tx_receipt, dict) and 'error' in tx_receipt:
-                    return Response(
-                        {"result": "error", "message": tx_receipt['error']},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR
                     )
 
-                txn_hash = tx_receipt.transactionHash.hex()
-                if not txn_hash.startswith('0x'):
-                    txn_hash = '0x' + txn_hash
+                # Record on blockchain
+                try:
+                    sepolia = Sepolia()
+                    tx_receipt = sepolia.record_review(
+                        manuscript_id=str(manuscript.id),
+                        reviewer_id=str(request.user.id),
+                        metadata=metadata
+                    )
+                except Exception as e:
+                    return Response(
+                        {
+                            "result": "error",
+                            "message": f"Blockchain recording failed: {str(e)}",
+                            "location": "Blockchain interaction"
+                        },
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+
+                if isinstance(tx_receipt, dict) and 'error' in tx_receipt:
+                    return Response(
+                        {
+                            "result": "error",
+                            "message": tx_receipt['error'],
+                            "location": "Transaction receipt"
+                        },
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+
+                try:
+                    txn_hash = tx_receipt.transactionHash.hex()
+                    if not txn_hash.startswith('0x'):
+                        txn_hash = '0x' + txn_hash
+                except Exception as e:
+                    return Response(
+                        {
+                            "result": "error",
+                            "message": f"Error processing transaction hash: {str(e)}",
+                            "location": "Transaction hash processing"
+                        },
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
 
                 # Record the review event
-                manuscript.record_review(
-                    reviewer=request.user.profile,
-                    comments=comments,
-                    verdict=verdict,
-                    actor=request.user,
-                    txn_hash=txn_hash
-                )
+                try:
+                    manuscript.record_review(
+                        reviewer=request.user,
+                        comments=comments,
+                        verdict=verdict,
+                        actor=request.user,
+                        txn_hash=txn_hash
+                    )
+                except Exception as e:
+                    return Response(
+                        {
+                            "result": "error",
+                            "message": f"Error recording review event: {str(e)}",
+                            "location": "Event recording"
+                        },
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
 
                 # Return success response
                 return Response(
@@ -625,12 +672,12 @@ class SubmitReview(APIView):
                         "result": "success",
                         "message": "Review submitted successfully",
                         "data": {
-                            "manuscript_id": manuscript.id,
+                            "manuscript_id": str(manuscript.id),
                             "manuscript_title": manuscript.title,
-                            "reviewer_id": request.user.profile.id,
+                            "reviewer_id": str(request.user.id),
                             "status": reviewer_assignment.status,
                             "verdict": verdict,
-                            "transaction_hash": txn_hash
+                            "transaction_hash": str(txn_hash)
                         }
                     },
                     status=status.HTTP_200_OK
@@ -640,18 +687,27 @@ class SubmitReview(APIView):
             return Response(
                 {
                     "result": "error",
-                    "message": "You are not assigned to review this manuscript"
+                    "message": "You are not assigned to review this manuscript",
+                    "location": "Reviewer assignment check"
                 },
                 status=status.HTTP_403_FORBIDDEN
             )
         except Manuscript.DoesNotExist:
             return Response(
-                {"result": "error", "message": "Manuscript not found"},
+                {
+                    "result": "error", 
+                    "message": "Manuscript not found",
+                    "location": "Manuscript lookup"
+                },
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
             return Response(
-                {"result": "error", "message": str(e)},
+                {
+                    "result": "error",
+                    "message": str(e),
+                    "location": "Unknown error"
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
@@ -681,13 +737,13 @@ class SubmitCorrections(APIView):
                 # Record on blockchain
                 sepolia = Sepolia()
                 metadata = {
-                    'author_id': str(request.user.profile.id),
-                    'author_name': f"{request.user.profile.first_name} {request.user.profile.last_name}",
+                    'author_id': str(request.user.id),
+                    'author_name': f"{request.user.first_name} {request.user.last_name}",
                     'changes_description': changes_description
                 }
                 tx_receipt = sepolia.record_corrections(
                     manuscript_id=manuscript.id,
-                    author_id=request.user.profile.id,
+                    author_id=request.user.id,
                     metadata=metadata
                 )
 
@@ -716,7 +772,7 @@ class SubmitCorrections(APIView):
                         "data": {
                             "manuscript_id": manuscript.id,
                             "manuscript_title": manuscript.title,
-                            "author_id": request.user.profile.id,
+                            "author_id": request.user.id,
                             "transaction_hash": txn_hash
                         }
                     },
@@ -762,3 +818,60 @@ class PublishManuscript(APIView):
             {"result": "success", "message": "Manuscript published successfully"},
             status=status.HTTP_200_OK
         )
+
+class AssignedReviews(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = Pagination
+
+    def get(self, request, *args, **kwargs):
+        # Get all reviewer assignments for the authenticated user
+        assignments = ReviewerAssignment.objects.filter(
+            reviewer=request.user,
+            status__in=[
+                ReviewerAssignment.Status.PENDING,
+                ReviewerAssignment.Status.ACCEPTED
+            ]
+        ).select_related('manuscript', 'manuscript__journal_id', 'manuscript__submitted_by')
+
+        # Initialize paginator
+        paginator = self.pagination_class()
+        paginated_assignments = paginator.paginate_queryset(assignments, request)
+
+        # Prepare the response data
+        manuscript_list = []
+        for assignment in paginated_assignments:
+            manuscript = assignment.manuscript
+            manuscript_data = {
+                'id': manuscript.pk,
+                'title': manuscript.title,
+                'abstract': manuscript.abstract,
+                'journal': {
+                    'id': manuscript.journal_id.id,
+                    'name': manuscript.journal_id.name
+                },
+                'keywords': manuscript.keywords,
+                'submitted_by': manuscript.submitted_by.username if manuscript.submitted_by else None,
+                'authors': [
+                    {
+                        'id': author.id,
+                        'first_name': author.first_name,
+                        'last_name': author.last_name,
+                        'email': author.email,
+                        'affiliation': author.affiliation
+                    }
+                    for author in manuscript.authors.all()
+                ],
+                'assignment': {
+                    'id': assignment.id,
+                    'status': assignment.status,
+                    'assigned_date': assignment.assigned_date,
+                    'due_date': assignment.due_date,
+                    'completed_date': assignment.completed_date
+                },
+                'submitted': manuscript.submitted,
+                'status': manuscript.status
+            }
+            manuscript_list.append(manuscript_data)
+
+        return paginator.get_paginated_response(manuscript_list)
