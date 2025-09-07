@@ -172,11 +172,9 @@ CORS_ALLOW_CREDENTIALS = True
 W3 = Web3(Web3.HTTPProvider('https://sepolia.infura.io/v3/33402a9c3c794b65ae627ce14205f81a'))
 W3_OWNERS_ADDRESS = Web3.to_checksum_address("0x674938B41B6ed666989f4C476A721224288F0b1E".lower())
 W3_CONTRACT_ADDRESS = Web3.to_checksum_address("0xcD60Ce70ce63f5081F0ea1d9b78da6cd2e6C9EcB")
-W3_PRIV_KEY = '0xd3af8e91942b26667d2d0e04bbc06b9cbe67b162daf8c3db3e31aac1d2f41eb5'  # open('priv_key.txt').readline()
+W3_PRIV_KEY = secrets.get('W3_PRIV_KEY')
 W3_TEST_ACCOUNTS = [
     W3_OWNERS_ADDRESS,
     Web3.to_checksum_address("0x0297F6C254CeD9B8A3A3d829dfA80ccB73d5e6ED".lower()),
     Web3.to_checksum_address("0xB4a271B7e99B07Cd8989f8e1C7ccfc42Fd41eC6A".lower())
 ]
-INFURA_API_KEY = '33402a9c3c794b65ae627ce14205f81a'
-INFURA_SECRET_KEY = '93c55cc9d9634b2090ce32c68f6cf699'

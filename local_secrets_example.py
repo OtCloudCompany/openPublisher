@@ -1,7 +1,8 @@
 secrets = {
-    'MYSQL_DB': 'openpublisher',
+    'MYSQL_DB': '',
     'MYSQL_USER': '',
     'MYSQL_PASSWORD': '',
-    'MYSQL_HOST': 'localhost',
+    'MYSQL_HOST': '',
     'MYSQL_PORT': 3306,
-    }
+    'W3_PRIV_KEY': '',
+}
