@@ -8,10 +8,13 @@ from manuscripts.models import Manuscript, Author, ManuscriptEvent, ReviewerAssi
 from utilities import CustomUUIDEncoder
 from json import JSONDecodeError
 from django.conf import settings
+from django.core.files.storage import default_storage
 from django.http import JsonResponse
 from rest_framework import permissions, status
 from rest_framework.parsers import JSONParser
 from django.db import transaction
+from django.utils import timezone
+from rest_framework.parsers import MultiPartParser, FormParser
 
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
@@ -168,6 +171,56 @@ class Sepolia:
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
+        return tx_receipt
+
+    def record_corrections(self, manuscript_id, author_id, metadata):
+        """
+        Records a corrections submission event on the contract.
+        Args:
+            manuscript_id: The ID of the manuscript
+            author_id: The ID of the author submitting corrections
+            metadata: Additional metadata (dict) to store with the event
+        Returns:
+            Transaction receipt or error dict
+        """
+        if not self.web3.is_connected():
+            return JsonResponse(
+                {"result": "error", "message": "No connection to web3 endpoint"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        with open("JournalContract.json", 'r') as f:
+            compiled_contract = json.load(f)
+        abi = compiled_contract['abi']
+        contract = self.web3.eth.contract(address=settings.W3_CONTRACT_ADDRESS, abi=abi)
+
+        # Prepare the data for the contract call
+        metadata_json = json.dumps(metadata, cls=CustomUUIDEncoder)
+        encoded_data = contract.encodeABI(
+            fn_name='recordCorrections',
+            args=[str(manuscript_id), str(author_id), metadata_json]
+        )
+        nonce = self.web3.eth.get_transaction_count(settings.W3_OWNERS_ADDRESS)
+        transaction = {
+            'to': settings.W3_CONTRACT_ADDRESS,
+            'gas': 2000000,
+            'gasPrice': self.web3.eth.gas_price,
+            'nonce': nonce,
+            'data': encoded_data,
+        }
+
+        signed_txn = self.web3.eth.account.sign_transaction(transaction, settings.W3_PRIV_KEY)
+        try:
+            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.raw_transaction)
+        except Exception as e:
+            return {'error': f'Error sending raw transaction: {e}'}
+
+        tx_receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+        if not tx_receipt:
+            return JsonResponse(
+                {"result": "error", "message": "Transaction receipt not found"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         return tx_receipt
 
 
@@ -714,6 +767,7 @@ class SubmitReview(APIView):
 class SubmitCorrections(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser, JSONParser)  # Add JSONParser
 
     def post(self, request, manuscript_id, *args, **kwargs):
         try:
@@ -721,29 +775,89 @@ class SubmitCorrections(APIView):
                 # Get the manuscript
                 manuscript = get_object_or_404(Manuscript, id=manuscript_id)
 
-                # Parse the corrections data
-                corrections_data = JSONParser().parse(request)
-                changes_description = corrections_data.get('changes_description')
+                # Check content type and parse data accordingly
+                content_type = request.content_type or ''
+                
+                if 'application/json' in content_type:
+                    # Handle JSON data
+                    try:
+                        data = JSONParser().parse(request)
+                        manuscript_file = data.get('manuscript_file')
+                        changes_description = data.get('comments')
+                        journal_id = data.get('journal_id')
+                        manuscript_id = data.get('manuscript_id')
+                    except JSONDecodeError:
+                        return Response(
+                            {
+                                "result": "error",
+                                "message": "Invalid JSON data",
+                                "content_type": content_type
+                            },
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                else:
+                    # Handle multipart form data
+                    manuscript_file = request.FILES.get('manuscript_file')
+                    changes_description = request.POST.get('comments')
+                    journal_id = request.POST.get('journal_id')
+                    manuscript_id = request.POST.get('manuscript_id')
+
+                # Validate required fields
+                if not manuscript_file:
+                    return Response(
+                        {
+                            "result": "error",
+                            "message": "No manuscript file provided",
+                            "content_type": content_type
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
                 if not changes_description:
                     return Response(
                         {
                             "result": "error",
-                            "message": "Changes description is required"
+                            "message": "Changes description is required",
+                            "content_type": content_type
                         },
                         status=status.HTTP_400_BAD_REQUEST
                     )
+
+                # Validate file type and size
+                if not manuscript_file.name.lower().endswith('.docx'):
+                    return Response(
+                        {
+                            "result": "error",
+                            "message": "Only Ms Word files are accepted"
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Check file size (20MB limit)
+                if manuscript_file.size > 20 * 1024 * 1024:
+                    return Response(
+                        {
+                            "result": "error",
+                            "message": "File size exceeds 20MB limit"
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Save the file
+                manuscript_file_path = f'manuscripts/{manuscript.id}/corrections_{timezone.now().strftime("%Y%m%d_%H%M%S")}.docx'
+                default_storage.save(manuscript_file_path, manuscript_file)
 
                 # Record on blockchain
                 sepolia = Sepolia()
                 metadata = {
                     'author_id': str(request.user.id),
                     'author_name': f"{request.user.first_name} {request.user.last_name}",
-                    'changes_description': changes_description
+                    'changes_description': changes_description,
+                    'file_path': manuscript_file_path
                 }
                 tx_receipt = sepolia.record_corrections(
-                    manuscript_id=manuscript.id,
-                    author_id=request.user.id,
+                    manuscript_id=str(manuscript.id),
+                    author_id=str(request.user.id),
                     metadata=metadata
                 )
 
@@ -770,23 +884,25 @@ class SubmitCorrections(APIView):
                         "result": "success",
                         "message": "Corrections submitted successfully",
                         "data": {
-                            "manuscript_id": manuscript.id,
+                            "manuscript_id": str(manuscript.id),
                             "manuscript_title": manuscript.title,
-                            "author_id": request.user.id,
+                            "author_id": str(request.user.id),
+                            "file_path": manuscript_file_path,
                             "transaction_hash": txn_hash
                         }
                     },
                     status=status.HTTP_200_OK
                 )
 
-        except Manuscript.DoesNotExist:
-            return Response(
-                {"result": "error", "message": "Manuscript not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
         except Exception as e:
             return Response(
-                {"result": "error", "message": str(e)})
+                {
+                    "result": "error",
+                    "message": str(e),
+                    "location": "File upload processing"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class PublishManuscript(APIView):
     authentication_classes = [TokenAuthentication]
@@ -801,15 +917,16 @@ class PublishManuscript(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        if manuscript.status != Manuscript.Status.REVIEW:
-            return JsonResponse(
-                {"result": "error", "message": "Only reviewed manuscripts can be published"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # if manuscript.status != Manuscript.Status.REVIEW:
+        #     return JsonResponse(
+        #         {"result": "error", "message": "Only reviewed manuscripts can be published"},
+        #         status=status.HTTP_400_BAD_REQUEST
+        #     )
 
         sepolia = Sepolia()
-        tx_receipt = sepolia.post_manuscript(manuscript.to_json())
-        txn_hash = tx_receipt.transactionHash.hex()
+        txn_receipt = sepolia.post_manuscript(manuscript.to_json())
+        
+        txn_hash = txn_receipt.transactionHash.hex()
         if not txn_hash.startswith('0x'):
             txn_hash = '0x' + txn_hash
         manuscript.publish(actor=request.user, txn_hash=txn_hash)

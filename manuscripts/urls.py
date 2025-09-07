@@ -14,4 +14,5 @@ urlpatterns = [
     path('<journal_id>/<manuscript_id>/assign-reviewer', views.AssignReviewer.as_view(), name="assign-reviewer"),
     path('<journal_id>/<manuscript_id>/submit-review', views.SubmitReview.as_view(), name="submit-review"),
     path('<journal_id>/<manuscript_id>/submit-corrections', views.SubmitCorrections.as_view(), name="submit-corrections"),
+    path('<journal_id>/<manuscript_id>/publish', views.PublishManuscript.as_view(), name="publish"),
 ]

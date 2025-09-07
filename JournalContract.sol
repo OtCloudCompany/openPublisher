@@ -37,6 +37,12 @@ contract JournalContract {
     event ReviewerAssigned(string manuscriptId, string reviewerId, string metadata);
     event ReviewSubmitted(string manuscriptId, string reviewerId, string metadata);
     event CorrectionSubmitted(string manuscriptId, string authorId, string metadata);
+    event CorrectionsSubmitted(
+        string manuscriptId,
+        string authorId,
+        string metadata,
+        uint256 timestamp
+    );
 
     function publishManuscript(string memory manuscriptJson) public {
         manuscripts.push(Manuscript({
@@ -56,14 +62,20 @@ contract JournalContract {
         emit ReviewSubmitted(manuscriptId, reviewerId, metadata);
     }
 
-    function recordCorrections(string memory manuscriptId, string memory authorId, string memory metadata) public {
-        authorCorrections.push(AuthorCorrection({
-            manuscriptId: manuscriptId,
-            authorId: authorId,
-            metadata: metadata,
-            dateSubmitted: block.timestamp
-        }));
-        emit CorrectionSubmitted(manuscriptId, authorId, metadata);
+    function recordCorrections(
+        string memory manuscriptId,
+        string memory authorId,
+        string memory metadata
+    ) public {
+        require(bytes(manuscriptId).length > 0, "Manuscript ID cannot be empty");
+        require(bytes(authorId).length > 0, "Author ID cannot be empty");
+        
+        emit CorrectionsSubmitted(
+            manuscriptId,
+            authorId,
+            metadata,
+            block.timestamp
+        );
     }
 
     function getManuscriptsCount() public view returns (uint256) {

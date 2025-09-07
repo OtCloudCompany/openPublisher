@@ -7,7 +7,6 @@ from local_secrets import secrets
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
@@ -172,7 +171,7 @@ CORS_ALLOW_CREDENTIALS = True
 # WEB3 TOOLS
 W3 = Web3(Web3.HTTPProvider('https://sepolia.infura.io/v3/33402a9c3c794b65ae627ce14205f81a'))
 W3_OWNERS_ADDRESS = Web3.to_checksum_address("0x674938B41B6ed666989f4C476A721224288F0b1E".lower())
-W3_CONTRACT_ADDRESS = Web3.to_checksum_address("0x084107487ed8Fddd761b57C35B11a1F6da9cEfb5")
+W3_CONTRACT_ADDRESS = Web3.to_checksum_address("0xcD60Ce70ce63f5081F0ea1d9b78da6cd2e6C9EcB")
 W3_PRIV_KEY = '0xd3af8e91942b26667d2d0e04bbc06b9cbe67b162daf8c3db3e31aac1d2f41eb5'  # open('priv_key.txt').readline()
 W3_TEST_ACCOUNTS = [
     W3_OWNERS_ADDRESS,
